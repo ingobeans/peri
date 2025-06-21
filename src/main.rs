@@ -35,8 +35,8 @@ struct Element {
     mass: f32,
     electronegativity: Option<f32>,
     metal: bool,
-    period: u8,
-    group: Option<u8>,
+    period: u16,
+    group: Option<u16>,
 }
 
 struct Peri {
@@ -47,10 +47,21 @@ impl Peri {
         queue!(stdout(), Clear(crossterm::terminal::ClearType::All)).unwrap();
         let (mut width, height) = size().unwrap();
         width -= 3;
+
+        // calculate scale factor
+        // width scale factor is screen width / 18 because 18 groups
+        let width_scale_factor = width / 18;
+        // height scale is screen height / 10 because 10 rows,
+        // and multiplied by two because a character on a terminal is taller than it is wide
+        // and this is so that squares are mostly even
+        let height_scale_factor = height / 10 * 2;
+        // use the smaller of the two factors as scale factor
+        let scale_factor = width_scale_factor.min(height_scale_factor);
+
         for element in self.elements {
             if let Some(group) = element.group {
-                let x = (group as f32 / 18.0 * width as f32) as u16;
-                let y = (element.period as f32 / 7.0 * height as f32) as u16;
+                let x = group * scale_factor;
+                let y = element.period * scale_factor / 2; // divided by two because we multiply by two earlier
                 queue!(stdout(), MoveTo(x, y)).unwrap();
                 print!("{}", element.symbol);
                 stdout().flush().unwrap();
