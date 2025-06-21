@@ -1,10 +1,11 @@
-use std::io::{stdout, Write};
+use std::io::stdout;
 
 use crossterm::{
     cursor::MoveTo,
-    queue,
+    event::{Event, KeyCode, KeyModifiers},
+    execute, queue,
     style::{Color, SetBackgroundColor, SetForegroundColor},
-    terminal::{size, Clear},
+    terminal::{disable_raw_mode, enable_raw_mode, size, Clear},
 };
 
 fn parse_elements() -> [Element; 118] {
@@ -57,8 +58,25 @@ fn draw_square(x: u16, y: u16, scaling: u16, color: Color) {
     print!("{}┘", "─".repeat(scaling as usize - 1));
 }
 
+/// Print details about selected element
+fn draw_selected_info(element: Element, scaling: u16) {
+    let x = 4 * scaling;
+    let y = scaling / 2;
+    let mut stdout = stdout();
+    let texts = [
+        format!("{} - {}", element.number, element.symbol),
+        element.name.to_string(),
+        element.mass.to_string(),
+    ];
+    for (index, text) in texts.into_iter().enumerate() {
+        queue!(stdout, MoveTo(x, y + index as u16)).unwrap();
+        print!("{}", text);
+    }
+}
+
 struct Peri {
     elements: [Element; 118],
+    selection_index: Option<usize>,
 }
 impl Peri {
     fn draw(&self) {
@@ -76,23 +94,97 @@ impl Peri {
         // use the smaller of the two factors as scale factor
         let scale_factor = width_scale_factor.min(height_scale_factor);
 
-        for element in self.elements {
+        for (index, element) in self.elements.iter().enumerate() {
             if let Some(group) = element.group {
                 let x = group * scale_factor;
                 let y = element.period * scale_factor / 2; // divided by two because we multiply by two earlier
-                draw_square(x, y, scale_factor, Color::Reset);
+
+                let mut selected = false;
+                if let Some(selection_index) = self.selection_index {
+                    if index == selection_index {
+                        selected = true;
+                    }
+                }
+
+                if scale_factor > 3 {
+                    let mut color = Color::Reset;
+                    if selected {
+                        color = Color::Blue;
+                    }
+                    draw_square(x, y, scale_factor, color);
+                }
                 queue!(stdout(), MoveTo(x, y), SetForegroundColor(Color::Reset)).unwrap();
                 print!("{}", element.symbol);
-                stdout().flush().unwrap();
                 //std::thread::sleep(std::time::Duration::from_secs(1));
             }
         }
+
+        if let Some(selection_index) = self.selection_index {
+            draw_selected_info(self.elements[selection_index], scale_factor);
+        }
+
+        // move cursor back to bottom of screen
+        execute!(stdout(), MoveTo(0, 10 * scale_factor / 2)).unwrap();
+    }
+    fn interactive(&mut self) {
+        enable_raw_mode().unwrap();
+        self.draw();
+        loop {
+            let event = crossterm::event::read().unwrap();
+            match event {
+                Event::Key(key_event) => {
+                    if !key_event.kind.is_press() {
+                        continue;
+                    }
+                    match key_event.code {
+                        KeyCode::Esc => {
+                            self.selection_index = None;
+                            self.draw();
+                        }
+                        KeyCode::Right => {
+                            if self.selection_index.is_none() {
+                                self.selection_index = Some(0);
+                            } else {
+                                self.selection_index =
+                                    Some(self.selection_index.unwrap_or_default() + 1);
+                            }
+                            self.draw();
+                        }
+                        KeyCode::Left => {
+                            if self.selection_index.is_none() {
+                                self.selection_index = Some(0);
+                            } else {
+                                self.selection_index = Some(
+                                    self.selection_index.unwrap_or_default().saturating_sub(1),
+                                );
+                            }
+                            self.draw();
+                        }
+                        KeyCode::Char(char) => {
+                            // quit if ctrl+c or Q
+                            if key_event.modifiers.contains(KeyModifiers::CONTROL) {
+                                if char == 'c' {
+                                    break;
+                                }
+                            }
+                            if char == 'q' {
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+        disable_raw_mode().unwrap();
     }
 }
 
 fn main() {
-    let peri = Peri {
+    let mut peri = Peri {
         elements: parse_elements(),
+        selection_index: None,
     };
-    peri.draw();
+    peri.interactive();
 }
