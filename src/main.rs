@@ -3,6 +3,7 @@ use std::io::{stdout, Write};
 use crossterm::{
     cursor::MoveTo,
     queue,
+    style::{Color, SetBackgroundColor, SetForegroundColor},
     terminal::{size, Clear},
 };
 
@@ -39,6 +40,23 @@ struct Element {
     group: Option<u16>,
 }
 
+/// Draws a square at a position
+fn draw_square(x: u16, y: u16, scaling: u16, color: Color) {
+    let mut stdout = stdout();
+    queue!(
+        stdout,
+        SetBackgroundColor(color),
+        SetForegroundColor(Color::DarkGrey)
+    )
+    .unwrap();
+    for i in 0..scaling / 2 {
+        queue!(stdout, MoveTo(x, y + i)).unwrap();
+        print!("{}│", " ".repeat(scaling as usize - 1));
+    }
+    queue!(stdout, MoveTo(x, y + scaling / 2 - 1)).unwrap();
+    print!("{}┘", "─".repeat(scaling as usize - 1));
+}
+
 struct Peri {
     elements: [Element; 118],
 }
@@ -62,16 +80,17 @@ impl Peri {
             if let Some(group) = element.group {
                 let x = group * scale_factor;
                 let y = element.period * scale_factor / 2; // divided by two because we multiply by two earlier
-                queue!(stdout(), MoveTo(x, y)).unwrap();
+                draw_square(x, y, scale_factor, Color::Reset);
+                queue!(stdout(), MoveTo(x, y), SetForegroundColor(Color::Reset)).unwrap();
                 print!("{}", element.symbol);
                 stdout().flush().unwrap();
+                //std::thread::sleep(std::time::Duration::from_secs(1));
             }
         }
     }
 }
 
 fn main() {
-    println!("Hello, world!");
     let peri = Peri {
         elements: parse_elements(),
     };
