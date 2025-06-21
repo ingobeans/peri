@@ -1,3 +1,4 @@
+use core::panic;
 use std::io::stdout;
 
 use crossterm::{
@@ -14,16 +15,30 @@ fn parse_elements() -> [Element; 118] {
     let elements: [Element; 118] = core::array::from_fn(|_| {
         let entry = data.next().expect("elements.txt isnt 118 entries");
         let properties: Vec<&str> = entry.split(',').collect();
+        let number = properties[0].parse().unwrap();
+        let period;
+        let group;
+        if number >= 57 && number <= 71 {
+            group = number as u16 - 57 + 4;
+            period = 9;
+        } else if number >= 89 && number <= 103 {
+            group = number as u16 - 89 + 4;
+            period = 10;
+        } else {
+            println!("{}", number);
+            group = properties[8].parse().unwrap();
+            period = properties[7].parse().unwrap();
+        }
 
         Element {
             name: properties[1],
             symbol: properties[2],
-            number: properties[0].parse().unwrap(),
+            number,
             mass: properties[3].parse().unwrap(),
             metal: properties[12] == "yes",
             electronegativity: properties[17].parse().ok(),
-            period: properties[7].parse().unwrap(),
-            group: properties[8].parse().ok(),
+            period,
+            group,
         }
     });
     elements
@@ -38,7 +53,7 @@ struct Element {
     electronegativity: Option<f32>,
     metal: bool,
     period: u16,
-    group: Option<u16>,
+    group: u16,
 }
 
 /// Draws a square at a position
@@ -79,6 +94,14 @@ struct Peri {
     selection_index: Option<usize>,
 }
 impl Peri {
+    fn find_element_by_pos(&self, x: u16, y: u16) -> Option<Element> {
+        for element in self.elements {
+            if element.group == x && element.period == y {
+                return Some(element);
+            }
+        }
+        None
+    }
     fn draw(&self) {
         queue!(stdout(), Clear(crossterm::terminal::ClearType::All)).unwrap();
         let (mut width, height) = size().unwrap();
@@ -95,28 +118,26 @@ impl Peri {
         let scale_factor = width_scale_factor.min(height_scale_factor);
 
         for (index, element) in self.elements.iter().enumerate() {
-            if let Some(group) = element.group {
-                let x = group * scale_factor;
-                let y = element.period * scale_factor / 2; // divided by two because we multiply by two earlier
+            let x = element.group * scale_factor;
+            let y = element.period * scale_factor / 2; // divided by two because we multiply by two earlier
 
-                let mut selected = false;
-                if let Some(selection_index) = self.selection_index {
-                    if index == selection_index {
-                        selected = true;
-                    }
+            let mut selected = false;
+            if let Some(selection_index) = self.selection_index {
+                if index == selection_index {
+                    selected = true;
                 }
-
-                if scale_factor > 3 {
-                    let mut color = Color::Reset;
-                    if selected {
-                        color = Color::Blue;
-                    }
-                    draw_square(x, y, scale_factor, color);
-                }
-                queue!(stdout(), MoveTo(x, y), SetForegroundColor(Color::Reset)).unwrap();
-                print!("{}", element.symbol);
-                //std::thread::sleep(std::time::Duration::from_secs(1));
             }
+
+            if scale_factor > 3 {
+                let mut color = Color::Reset;
+                if selected {
+                    color = Color::Blue;
+                }
+                draw_square(x, y, scale_factor, color);
+            }
+            queue!(stdout(), MoveTo(x, y), SetForegroundColor(Color::Reset)).unwrap();
+            print!("{}", element.symbol);
+            //std::thread::sleep(std::time::Duration::from_secs(1));
         }
 
         if let Some(selection_index) = self.selection_index {
@@ -157,6 +178,35 @@ impl Peri {
                                 self.selection_index = Some(
                                     self.selection_index.unwrap_or_default().saturating_sub(1),
                                 );
+                            }
+                            self.draw();
+                        }
+                        KeyCode::Down => {
+                            if self.selection_index.is_none() {
+                                self.selection_index = Some(0);
+                            } else {
+                                let current = self.elements[self.selection_index.unwrap()];
+                                let target_element =
+                                    self.find_element_by_pos(current.group, current.period + 1);
+                                let Some(target_element) = target_element else {
+                                    continue;
+                                };
+                                self.selection_index = Some(target_element.number as usize - 1);
+                            }
+                            self.draw();
+                        }
+                        KeyCode::Up => {
+                            if self.selection_index.is_none() {
+                                self.selection_index = Some(0);
+                            } else {
+                                let current = self.elements[self.selection_index.unwrap()];
+                                let target_element =
+                                    self.find_element_by_pos(current.group, current.period - 1);
+                                let Some(target_element) = target_element else {
+                                    continue;
+                                };
+
+                                self.selection_index = Some(target_element.number as usize - 1);
                             }
                             self.draw();
                         }
