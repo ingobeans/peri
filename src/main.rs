@@ -5,7 +5,7 @@ use crossterm::{
     cursor::MoveTo,
     event::{Event, KeyCode, KeyModifiers},
     execute, queue,
-    style::{Color, SetBackgroundColor, SetForegroundColor},
+    style::{Color, ResetColor, SetBackgroundColor, SetForegroundColor},
     terminal::{disable_raw_mode, enable_raw_mode, size, Clear},
 };
 
@@ -103,7 +103,8 @@ impl Peri {
         None
     }
     fn draw(&self) {
-        queue!(stdout(), Clear(crossterm::terminal::ClearType::All)).unwrap();
+        let mut stdout = stdout();
+        queue!(stdout, Clear(crossterm::terminal::ClearType::All)).unwrap();
         let (mut width, height) = size().unwrap();
         width -= 3;
 
@@ -135,17 +136,17 @@ impl Peri {
                 }
                 draw_square(x, y, scale_factor, color);
             }
-            queue!(stdout(), MoveTo(x, y), SetForegroundColor(Color::Reset)).unwrap();
+            queue!(stdout, MoveTo(x, y), SetForegroundColor(Color::Reset)).unwrap();
             print!("{}", element.symbol);
-            //std::thread::sleep(std::time::Duration::from_secs(1));
         }
 
+        queue!(stdout, ResetColor).unwrap();
         if let Some(selection_index) = self.selection_index {
             draw_selected_info(self.elements[selection_index], scale_factor);
         }
 
         // move cursor back to bottom of screen
-        execute!(stdout(), MoveTo(0, 10 * scale_factor / 2)).unwrap();
+        execute!(stdout, MoveTo(0, 10 * scale_factor / 2)).unwrap();
     }
     fn interactive(&mut self) {
         enable_raw_mode().unwrap();
