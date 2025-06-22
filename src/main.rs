@@ -1,5 +1,4 @@
-use core::panic;
-use std::io::stdout;
+use std::io::{stdin, stdout, Read, Write};
 
 use crossterm::{
     cursor::MoveTo,
@@ -16,14 +15,15 @@ fn parse_elements() -> [Element; 118] {
         let entry = data.next().expect("elements.txt isnt 118 entries");
         let properties: Vec<&str> = entry.split(',').collect();
         let number = properties[0].parse().unwrap();
+
         let period;
         let group;
         if number >= 57 && number <= 71 {
             group = number as u16 - 57 + 4;
-            period = 9;
+            period = 8;
         } else if number >= 89 && number <= 103 {
             group = number as u16 - 89 + 4;
-            period = 10;
+            period = 9;
         } else {
             println!("{}", number);
             group = properties[8].parse().unwrap();
@@ -39,6 +39,7 @@ fn parse_elements() -> [Element; 118] {
             electronegativity: properties[17].parse().ok(),
             period,
             group,
+            ty: properties[15],
         }
     });
     elements
@@ -54,15 +55,16 @@ struct Element {
     metal: bool,
     period: u16,
     group: u16,
+    ty: &'static str,
 }
 
 /// Draws a square at a position
-fn draw_square(x: u16, y: u16, scaling: u16, color: Color) {
+fn draw_square(x: u16, y: u16, scaling: u16, foreground_color: Color, background_color: Color) {
     let mut stdout = stdout();
     queue!(
         stdout,
-        SetBackgroundColor(color),
-        SetForegroundColor(Color::DarkGrey)
+        SetBackgroundColor(background_color),
+        SetForegroundColor(foreground_color)
     )
     .unwrap();
     for i in 0..scaling / 2 {
@@ -82,6 +84,10 @@ fn draw_selected_info(element: Element, scaling: u16) {
         format!("{} - {}", element.number, element.symbol),
         element.name.to_string(),
         element.mass.to_string(),
+        element.ty.to_string(),
+        element
+            .electronegativity
+            .map_or(String::new(), |f| f.to_string()),
     ];
     for (index, text) in texts.into_iter().enumerate() {
         queue!(stdout, MoveTo(x, y + index as u16)).unwrap();
@@ -89,9 +95,57 @@ fn draw_selected_info(element: Element, scaling: u16) {
     }
 }
 
+enum ColoringMode {
+    /// Elements aren't colored
+    None,
+    /// Elements are colored based on their type
+    TypeBased,
+    /// Elements are colored based on their electronegativity
+    ElectronegativityBased,
+}
+
+fn lerp_1(value1: f32, value2: f32, t: f32) -> f32 {
+    value1 + t * (value2 - value1)
+}
+
+struct Gradient {
+    steps: Vec<f32>,
+    values: Vec<[u8; 3]>,
+}
+impl Gradient {
+    fn new(steps: Vec<f32>, values: Vec<[u8; 3]>) -> Self {
+        assert_eq!(steps.len(), values.len());
+        Self { steps, values }
+    }
+    fn get_at(&self, position: f32) -> [u8; 3] {
+        let mut last = 0;
+        for (index, step) in self.steps.iter().enumerate() {
+            if *step > position {
+                break;
+            }
+            last = index;
+        }
+        if last == self.steps.len() {
+            return self.values[last];
+        }
+
+        let value_a = self.values[last];
+        let value_b = self.values[last + 1];
+        let step_a = self.steps[last];
+        let step_b = self.steps[last + 1];
+        let percent = (position - step_a) / (step_b - step_a);
+        [
+            lerp_1(value_a[0] as f32, value_b[0] as f32, percent) as u8,
+            lerp_1(value_a[1] as f32, value_b[1] as f32, percent) as u8,
+            lerp_1(value_a[2] as f32, value_b[2] as f32, percent) as u8,
+        ]
+    }
+}
+
 struct Peri {
     elements: [Element; 118],
     selection_index: Option<usize>,
+    coloring_mode: ColoringMode,
 }
 impl Peri {
     fn find_element_by_pos(&self, x: u16, y: u16) -> Option<Element> {
@@ -101,6 +155,87 @@ impl Peri {
             }
         }
         None
+    }
+    /// Returns which color an element should be according to coloring mode
+    /// Returns (foreground_color, background_color)
+    fn get_color(&self, element: &Element) -> (Color, Color) {
+        match self.coloring_mode {
+            ColoringMode::None => (Color::Reset, Color::Reset),
+            ColoringMode::ElectronegativityBased => {
+                let Some(electronegativity) = element.electronegativity else {
+                    return (Color::Reset, Color::Reset);
+                };
+                let gradient = Gradient::new(
+                    vec![0.7, 2.2, 4.0],
+                    vec![[214, 251, 221], [255, 232, 77], [255, 6, 0]],
+                );
+                let rgb = gradient.get_at(electronegativity);
+                (
+                    Color::Black,
+                    Color::Rgb {
+                        r: rgb[0],
+                        g: rgb[1],
+                        b: rgb[2],
+                    },
+                )
+            }
+            ColoringMode::TypeBased => match element.ty {
+                "Nonmetal" => (Color::Black, Color::Green),
+                "Noble Gas" => (Color::Black, Color::Magenta),
+                "Transition Metal" => (Color::Black, Color::Red),
+                "Metal" => (Color::Black, Color::Blue),
+                "Metalloid" => (
+                    Color::Black,
+                    Color::Rgb {
+                        r: 141,
+                        g: 234,
+                        b: 216,
+                    },
+                ),
+                "Halogen" => (Color::Black, Color::White),
+                "Alkali Metal" => (
+                    Color::Black,
+                    Color::Rgb {
+                        r: 228,
+                        g: 145,
+                        b: 95,
+                    },
+                ),
+                "Alkaline Earth Metal" => (Color::Black, Color::Yellow),
+                _ => (Color::Reset, Color::Reset),
+            },
+        }
+    }
+    fn draw_element_square(
+        &self,
+        element: &Element,
+        highlight_color: Option<Color>,
+        scale_factor: u16,
+    ) {
+        let x = element.group * scale_factor;
+        let mut y = element.period * scale_factor / 2; // divided by two because we multiply by two earlier
+
+        // add a gap
+        if element.period >= 8 {
+            y = (element.period + 1) * scale_factor / 2;
+        }
+        let (foreground_color, background_color) = self.get_color(&element);
+        if scale_factor > 3 {
+            draw_square(
+                x,
+                y,
+                scale_factor,
+                highlight_color.unwrap_or(Color::DarkGrey),
+                background_color,
+            );
+        }
+        queue!(
+            stdout(),
+            MoveTo(x, y),
+            SetForegroundColor(highlight_color.unwrap_or(foreground_color))
+        )
+        .unwrap();
+        print!("{}", element.symbol);
     }
     fn draw(&self) {
         let mut stdout = stdout();
@@ -118,32 +253,19 @@ impl Peri {
         // use the smaller of the two factors as scale factor
         let scale_factor = width_scale_factor.min(height_scale_factor);
 
-        for (index, element) in self.elements.iter().enumerate() {
-            let x = element.group * scale_factor;
-            let y = element.period * scale_factor / 2; // divided by two because we multiply by two earlier
-
-            let mut selected = false;
-            if let Some(selection_index) = self.selection_index {
-                if index == selection_index {
-                    selected = true;
-                }
-            }
-
-            if scale_factor > 3 {
-                let mut color = Color::Reset;
-                if selected {
-                    color = Color::Blue;
-                }
-                draw_square(x, y, scale_factor, color);
-            }
-            queue!(stdout, MoveTo(x, y), SetForegroundColor(Color::Reset)).unwrap();
-            print!("{}", element.symbol);
+        for element in self.elements {
+            self.draw_element_square(&element, None, scale_factor);
         }
 
         queue!(stdout, ResetColor).unwrap();
         if let Some(selection_index) = self.selection_index {
-            draw_selected_info(self.elements[selection_index], scale_factor);
+            let selection = self.elements[selection_index];
+            // draw details about selected element
+            draw_selected_info(selection, scale_factor);
+            // draw border around selection
+            self.draw_element_square(&selection, Some(Color::Blue), scale_factor);
         }
+        queue!(stdout, ResetColor).unwrap();
 
         // move cursor back to bottom of screen
         execute!(stdout, MoveTo(0, 10 * scale_factor / 2)).unwrap();
@@ -221,6 +343,26 @@ impl Peri {
                             if char == 'q' {
                                 break;
                             }
+                            // make c open coloring settings prompt
+                            if char == 'c' {
+                                print!("enter new coloring mode, [N]one, [E]lectronegativity or [T]ype: ");
+                                stdout().flush().unwrap();
+                                let mut buf: [u8; 1] = [0];
+                                stdin().read_exact(&mut buf).unwrap();
+                                match buf[0] {
+                                    b'n' => {
+                                        self.coloring_mode = ColoringMode::None;
+                                    }
+                                    b'e' => {
+                                        self.coloring_mode = ColoringMode::ElectronegativityBased;
+                                    }
+                                    b't' => {
+                                        self.coloring_mode = ColoringMode::TypeBased;
+                                    }
+                                    _ => {}
+                                }
+                                self.draw();
+                            }
                         }
                         _ => {}
                     }
@@ -236,6 +378,7 @@ fn main() {
     let mut peri = Peri {
         elements: parse_elements(),
         selection_index: None,
+        coloring_mode: ColoringMode::None,
     };
     peri.interactive();
 }
