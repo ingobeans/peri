@@ -1,4 +1,7 @@
-use std::io::{stdin, stdout, Read, Write};
+use std::{
+    any::Any,
+    io::{stdin, stdout, Read, Write},
+};
 
 use crossterm::{
     cursor::MoveTo,
@@ -27,7 +30,6 @@ fn parse_elements() -> [Element; 118] {
             group = number as u16 - 89 + 4;
             period = 9;
         } else {
-            println!("{}", number);
             group = properties[8].parse().unwrap();
             period = properties[7].parse().unwrap();
         }
@@ -112,6 +114,15 @@ struct Peri {
     coloring_mode: ColoringMode,
 }
 impl Peri {
+    fn find_element_by_symbol(&self, symbol: String) -> Option<Element> {
+        let symbol = symbol.to_lowercase();
+        for element in self.elements {
+            if element.symbol.to_lowercase() == symbol {
+                return Some(element);
+            }
+        }
+        None
+    }
     fn find_element_by_pos(&self, x: u16, y: u16) -> Option<Element> {
         for element in self.elements {
             if element.group == x && element.period == y {
@@ -323,6 +334,21 @@ impl Peri {
                                         self.coloring_mode = ColoringMode::TypeBased;
                                     }
                                     _ => {}
+                                }
+                                self.draw();
+                            }
+                            // make s open search/select prompt
+                            else if char == 's' {
+                                print!("select (symbol): ");
+                                stdout().flush().unwrap();
+                                let mut buf = String::new();
+                                disable_raw_mode().unwrap();
+                                stdin().read_line(&mut buf).unwrap();
+                                enable_raw_mode().unwrap();
+                                buf = buf.trim().to_string();
+                                let result = self.find_element_by_symbol(buf);
+                                if let Some(element) = result {
+                                    self.selection_index = Some(element.number as usize - 1);
                                 }
                                 self.draw();
                             }
