@@ -1,7 +1,4 @@
-use std::{
-    any::Any,
-    io::{stdin, stdout, Read, Write},
-};
+use std::io::{stdin, stdout, Read, Write};
 
 use crossterm::{
     cursor::MoveTo,
@@ -265,6 +262,9 @@ impl Peri {
                             } else {
                                 self.selection_index =
                                     Some(self.selection_index.unwrap_or_default() + 1);
+                                if self.selection_index.unwrap() >= 118 {
+                                    self.selection_index = Some(0);
+                                }
                             }
                             self.draw();
                         }
