@@ -177,11 +177,11 @@ impl Peri {
         scale_factor: u16,
     ) {
         let x = element.group * scale_factor;
-        let mut y = element.period * scale_factor / 2; // divided by two because we multiply by two earlier
+        let mut y = scale_factor / 2 * element.period; // divided by two because we multiply by two earlier
 
         // add a gap
         if element.period >= 8 {
-            y = (element.period + 1) * scale_factor / 2;
+            y = scale_factor / 2 * (element.period + 1);
         }
         let (foreground_color, background_color) = self.get_color(&element);
         if scale_factor > 3 {
@@ -216,7 +216,7 @@ impl Peri {
         let height_scale_factor = height / 10 * 2;
         // use the smaller of the two factors as scale factor
         let scale_factor = width_scale_factor.min(height_scale_factor);
-
+        let scale_factor = 5;
         for element in self.elements {
             self.draw_element_square(&element, None, scale_factor);
         }
@@ -232,7 +232,7 @@ impl Peri {
         queue!(stdout, ResetColor).unwrap();
 
         // move cursor back to bottom of screen
-        execute!(stdout, MoveTo(0, 10 * scale_factor / 2)).unwrap();
+        execute!(stdout, MoveTo(0, scale_factor / 2 * 10)).unwrap();
     }
     fn interactive(&mut self) {
         enable_raw_mode().unwrap();
