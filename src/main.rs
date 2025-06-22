@@ -216,7 +216,6 @@ impl Peri {
         let height_scale_factor = height / 10 * 2;
         // use the smaller of the two factors as scale factor
         let scale_factor = width_scale_factor.min(height_scale_factor);
-        let scale_factor = 5;
         for element in self.elements {
             self.draw_element_square(&element, None, scale_factor);
         }
