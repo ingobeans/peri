@@ -3,7 +3,7 @@ use std::io::{stdin, stdout, Read, Write};
 use crossterm::{
     cursor::MoveTo,
     event::{Event, KeyCode, KeyModifiers},
-    execute, queue,
+    queue,
     style::{Color, ResetColor, SetBackgroundColor, SetForegroundColor},
     terminal::{disable_raw_mode, enable_raw_mode, size, Clear},
 };
@@ -36,7 +36,7 @@ fn parse_elements() -> [Element; 118] {
             symbol: properties[2],
             number,
             mass: properties[3].parse().unwrap(),
-            metal: properties[12] == "yes",
+            _metal: properties[12] == "yes",
             electronegativity: properties[17].parse().ok(),
             period,
             group,
@@ -53,7 +53,7 @@ struct Element {
     number: u8,
     mass: f32,
     electronegativity: Option<f32>,
-    metal: bool,
+    _metal: bool,
     period: u16,
     group: u16,
     ty: &'static str,
@@ -211,19 +211,15 @@ impl Peri {
     }
     fn draw(&self) {
         let mut stdout = stdout();
-        queue!(stdout, Clear(crossterm::terminal::ClearType::All)).unwrap();
-        let (mut width, height) = size().unwrap();
-        width -= 3;
+        queue!(
+            stdout,
+            ResetColor,
+            Clear(crossterm::terminal::ClearType::All)
+        )
+        .unwrap();
 
-        // calculate scale factor
-        // width scale factor is screen width / 18 because 18 groups
-        let width_scale_factor = width / 18;
-        // height scale is screen height / 10 because 10 rows,
-        // and multiplied by two because a character on a terminal is taller than it is wide
-        // and this is so that squares are mostly even
-        let height_scale_factor = height / 10 * 2;
-        // use the smaller of the two factors as scale factor
-        let scale_factor = width_scale_factor.min(height_scale_factor);
+        let scale_factor = Peri::get_scale_factor();
+
         for element in self.elements {
             self.draw_element_square(&element, None, scale_factor);
         }
@@ -236,16 +232,34 @@ impl Peri {
             // draw border around selection
             self.draw_element_square(&selection, Some(Color::Blue), scale_factor);
         }
-        queue!(stdout, ResetColor).unwrap();
+        Self::reset_cursor(scale_factor);
+        stdout.flush().unwrap();
+    }
+    fn get_scale_factor() -> u16 {
+        let (mut width, height) = size().unwrap();
+        width -= 3;
 
-        // move cursor back to bottom of screen
-        execute!(stdout, MoveTo(0, scale_factor / 2 * 10)).unwrap();
+        // width scale factor is screen width / 18 because 18 groups
+        let width_scale_factor = width / 18;
+
+        // height scale is screen height / 10 because 10 rows,
+        // and multiplied by two because a character on a terminal is taller than it is wide
+        // and this is so that squares are mostly even
+        let height_scale_factor = height / 10 * 2;
+
+        // use the smaller of the two factors as scale factor
+        let scale_factor = width_scale_factor.min(height_scale_factor);
+        scale_factor
+    }
+    fn reset_cursor(scale_factor: u16) {
+        queue!(stdout(), MoveTo(0, scale_factor / 2 * 10), ResetColor).unwrap();
     }
     fn interactive(&mut self) {
         enable_raw_mode().unwrap();
         self.draw();
         loop {
             let event = crossterm::event::read().unwrap();
+            let scale_factor = Peri::get_scale_factor();
             match event {
                 Event::Key(key_event) => {
                     if !key_event.kind.is_press() {
@@ -260,52 +274,80 @@ impl Peri {
                             if self.selection_index.is_none() {
                                 self.selection_index = Some(0);
                             } else {
+                                // redraw old selected element to remove highlight
+                                let old = self.elements[self.selection_index.unwrap()];
+                                self.draw_element_square(&old, None, scale_factor);
+
                                 self.selection_index =
                                     Some(self.selection_index.unwrap_or_default() + 1);
                                 if self.selection_index.unwrap() >= 118 {
                                     self.selection_index = Some(0);
                                 }
                             }
-                            self.draw();
+                            // highlight new selection
+                            let new = self.elements[self.selection_index.unwrap()];
+                            self.draw_element_square(&new, Some(Color::Blue), scale_factor);
+                            stdout().flush().unwrap();
                         }
                         KeyCode::Left => {
                             if self.selection_index.is_none() {
                                 self.selection_index = Some(0);
                             } else {
+                                // redraw old selected element to remove highlight
+                                let old = self.elements[self.selection_index.unwrap()];
+                                self.draw_element_square(&old, None, scale_factor);
+
                                 self.selection_index = Some(
                                     self.selection_index.unwrap_or_default().saturating_sub(1),
                                 );
                             }
-                            self.draw();
+                            // highlight new selection
+                            let new = self.elements[self.selection_index.unwrap()];
+                            self.draw_element_square(&new, Some(Color::Blue), scale_factor);
+                            stdout().flush().unwrap();
                         }
                         KeyCode::Down => {
                             if self.selection_index.is_none() {
                                 self.selection_index = Some(0);
                             } else {
-                                let current = self.elements[self.selection_index.unwrap()];
+                                let old = self.elements[self.selection_index.unwrap()];
+
                                 let target_element =
-                                    self.find_element_by_pos(current.group, current.period + 1);
+                                    self.find_element_by_pos(old.group, old.period + 1);
                                 let Some(target_element) = target_element else {
                                     continue;
                                 };
+                                // redraw old selected element to remove highlight
+                                self.draw_element_square(&old, None, scale_factor);
+
                                 self.selection_index = Some(target_element.number as usize - 1);
                             }
-                            self.draw();
+
+                            // highlight new selection
+                            let new = self.elements[self.selection_index.unwrap()];
+                            self.draw_element_square(&new, Some(Color::Blue), scale_factor);
+                            stdout().flush().unwrap();
                         }
                         KeyCode::Up => {
                             if self.selection_index.is_none() {
                                 self.selection_index = Some(0);
                             } else {
-                                let current = self.elements[self.selection_index.unwrap()];
+                                let old = self.elements[self.selection_index.unwrap()];
+
                                 let target_element =
-                                    self.find_element_by_pos(current.group, current.period - 1);
+                                    self.find_element_by_pos(old.group, old.period - 1);
                                 let Some(target_element) = target_element else {
                                     continue;
                                 };
+                                // redraw old selected element to remove highlight
+                                self.draw_element_square(&old, None, scale_factor);
 
                                 self.selection_index = Some(target_element.number as usize - 1);
                             }
-                            self.draw();
+                            // highlight new selection
+                            let new = self.elements[self.selection_index.unwrap()];
+                            self.draw_element_square(&new, Some(Color::Blue), scale_factor);
+                            stdout().flush().unwrap();
                         }
                         KeyCode::Char(char) => {
                             // quit if ctrl+c or Q
@@ -319,6 +361,7 @@ impl Peri {
                             }
                             // make c open coloring settings prompt
                             if char == 'c' {
+                                Self::reset_cursor(scale_factor);
                                 print!("enter new coloring mode, [N]one, [E]lectronegativity or [T]ype: ");
                                 stdout().flush().unwrap();
                                 let mut buf: [u8; 1] = [0];
@@ -339,6 +382,7 @@ impl Peri {
                             }
                             // make s open search/select prompt
                             else if char == 's' {
+                                Self::reset_cursor(scale_factor);
                                 print!("select (symbol): ");
                                 stdout().flush().unwrap();
                                 let mut buf = String::new();
@@ -359,6 +403,7 @@ impl Peri {
                 _ => {}
             }
         }
+        Self::reset_cursor(Self::get_scale_factor());
         disable_raw_mode().unwrap();
     }
 }
