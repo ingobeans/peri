@@ -81,6 +81,7 @@ fn draw_selected_info(element: Element, scaling: u16) {
     let x = 4 * scaling;
     let y = scaling / 2;
     let mut stdout = stdout();
+
     let texts = [
         format!("{} - {}", element.number, element.symbol),
         element.name.to_string(),
@@ -90,9 +91,17 @@ fn draw_selected_info(element: Element, scaling: u16) {
             .electronegativity
             .map_or(String::new(), |f| f.to_string()),
     ];
+    let max_horizontal_space = 12 * scaling - x;
+
     for (index, text) in texts.into_iter().enumerate() {
         queue!(stdout, MoveTo(x, y + index as u16)).unwrap();
-        print!("{}", text);
+        // draw new text, padded with whitespace at end
+        // to overwrite previous entry (in case it was longer)
+        print!(
+            "{}{}",
+            text,
+            " ".repeat(max_horizontal_space as usize - text.len())
+        );
     }
 }
 
@@ -218,7 +227,12 @@ impl Peri {
             self.draw_element_square(&element, None, scale_factor);
         }
 
-        queue!(stdout, ResetColor).unwrap();
+        self.handle_selection(scale_factor);
+        Self::reset_cursor(scale_factor);
+        stdout.flush().unwrap();
+    }
+    fn handle_selection(&self, scale_factor: u16) {
+        queue!(stdout(), ResetColor).unwrap();
         if let Some(selection_index) = self.selection_index {
             let selection = self.elements[selection_index];
             // draw details about selected element
@@ -226,8 +240,6 @@ impl Peri {
             // draw border around selection
             self.draw_element_square(&selection, Some(Color::Blue), scale_factor);
         }
-        Self::reset_cursor(scale_factor);
-        stdout.flush().unwrap();
     }
     fn get_scale_factor() -> u16 {
         let (mut width, height) = size().unwrap();
@@ -278,8 +290,7 @@ impl Peri {
                             }
                         }
                         // highlight new selection
-                        let new = self.elements[self.selection_index.unwrap()];
-                        self.draw_element_square(&new, Some(Color::Blue), scale_factor);
+                        self.handle_selection(scale_factor);
                         stdout().flush().unwrap();
                     }
                     KeyCode::Left => {
@@ -294,8 +305,7 @@ impl Peri {
                                 Some(self.selection_index.unwrap_or_default().saturating_sub(1));
                         }
                         // highlight new selection
-                        let new = self.elements[self.selection_index.unwrap()];
-                        self.draw_element_square(&new, Some(Color::Blue), scale_factor);
+                        self.handle_selection(scale_factor);
                         stdout().flush().unwrap();
                     }
                     KeyCode::Down => {
@@ -316,8 +326,7 @@ impl Peri {
                         }
 
                         // highlight new selection
-                        let new = self.elements[self.selection_index.unwrap()];
-                        self.draw_element_square(&new, Some(Color::Blue), scale_factor);
+                        self.handle_selection(scale_factor);
                         stdout().flush().unwrap();
                     }
                     KeyCode::Up => {
@@ -337,8 +346,7 @@ impl Peri {
                             self.selection_index = Some(target_element.number as usize - 1);
                         }
                         // highlight new selection
-                        let new = self.elements[self.selection_index.unwrap()];
-                        self.draw_element_square(&new, Some(Color::Blue), scale_factor);
+                        self.handle_selection(scale_factor);
                         stdout().flush().unwrap();
                     }
                     KeyCode::Char(char) => {
