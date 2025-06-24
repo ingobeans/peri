@@ -141,8 +141,13 @@ impl Peri {
                     return (Color::Reset, Color::Reset);
                 };
                 let gradient = Gradient::new(
-                    vec![0.7, 2.2, 4.0],
-                    vec![[214, 251, 221], [255, 232, 77], [255, 6, 0]],
+                    vec![
+                        (0.7, [214, 251, 221]),
+                        (1.9, [5, 246, 41]),
+                        (2.2, [255, 232, 77]),
+                        (4.0, [255, 6, 0]),
+                    ],
+                    false,
                 );
                 let rgb = gradient.get_at(electronegativity);
                 (
