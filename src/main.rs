@@ -2,8 +2,10 @@ use std::io::{stdin, stdout, Read, Write};
 
 use crossterm::{
     cursor::MoveTo,
-    event::{Event, KeyCode, KeyModifiers},
-    queue,
+    event::{
+        DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers, MouseEventKind,
+    },
+    execute, queue,
     style::{Color, ResetColor, SetBackgroundColor, SetForegroundColor},
     terminal::{disable_raw_mode, enable_raw_mode, size, Clear},
 };
@@ -266,147 +268,184 @@ impl Peri {
         queue!(stdout(), MoveTo(0, scale_factor / 2 * 10), ResetColor).unwrap();
     }
     fn interactive(&mut self) {
+        execute!(stdout(), EnableMouseCapture).unwrap();
         enable_raw_mode().unwrap();
         self.draw();
         loop {
             let event = crossterm::event::read().unwrap();
             let scale_factor = Peri::get_scale_factor();
-            if let Event::Key(key_event) = event {
-                if !key_event.kind.is_press() {
-                    continue;
-                }
-                match key_event.code {
-                    KeyCode::Esc => {
-                        self.selection_index = None;
-                        self.draw();
+            match event {
+                Event::Key(key_event) => {
+                    if !key_event.kind.is_press() {
+                        continue;
                     }
-                    KeyCode::Right => {
-                        if self.selection_index.is_none() {
-                            self.selection_index = Some(0);
-                        } else {
-                            // redraw old selected element to remove highlight
-                            let old = self.elements[self.selection_index.unwrap()];
-                            self.draw_element_square(&old, None, scale_factor);
-
-                            self.selection_index =
-                                Some(self.selection_index.unwrap_or_default() + 1);
-                            if self.selection_index.unwrap() >= 118 {
+                    match key_event.code {
+                        KeyCode::Esc => {
+                            self.selection_index = None;
+                            self.draw();
+                        }
+                        KeyCode::Right => {
+                            if self.selection_index.is_none() {
                                 self.selection_index = Some(0);
+                            } else {
+                                // redraw old selected element to remove highlight
+                                let old = self.elements[self.selection_index.unwrap()];
+                                self.draw_element_square(&old, None, scale_factor);
+
+                                self.selection_index =
+                                    Some(self.selection_index.unwrap_or_default() + 1);
+                                if self.selection_index.unwrap() >= 118 {
+                                    self.selection_index = Some(0);
+                                }
                             }
+                            // highlight new selection
+                            self.handle_selection(scale_factor);
+                            stdout().flush().unwrap();
                         }
-                        // highlight new selection
-                        self.handle_selection(scale_factor);
-                        stdout().flush().unwrap();
-                    }
-                    KeyCode::Left => {
-                        if self.selection_index.is_none() {
-                            self.selection_index = Some(0);
-                        } else {
-                            // redraw old selected element to remove highlight
-                            let old = self.elements[self.selection_index.unwrap()];
-                            self.draw_element_square(&old, None, scale_factor);
+                        KeyCode::Left => {
+                            if self.selection_index.is_none() {
+                                self.selection_index = Some(0);
+                            } else {
+                                // redraw old selected element to remove highlight
+                                let old = self.elements[self.selection_index.unwrap()];
+                                self.draw_element_square(&old, None, scale_factor);
 
-                            self.selection_index =
-                                Some(self.selection_index.unwrap_or_default().saturating_sub(1));
+                                self.selection_index = Some(
+                                    self.selection_index.unwrap_or_default().saturating_sub(1),
+                                );
+                            }
+                            // highlight new selection
+                            self.handle_selection(scale_factor);
+                            stdout().flush().unwrap();
                         }
-                        // highlight new selection
-                        self.handle_selection(scale_factor);
-                        stdout().flush().unwrap();
-                    }
-                    KeyCode::Down => {
-                        if self.selection_index.is_none() {
-                            self.selection_index = Some(0);
-                        } else {
-                            let old = self.elements[self.selection_index.unwrap()];
+                        KeyCode::Down => {
+                            if self.selection_index.is_none() {
+                                self.selection_index = Some(0);
+                            } else {
+                                let old = self.elements[self.selection_index.unwrap()];
 
-                            let target_element =
-                                self.find_element_by_pos(old.group, old.period + 1);
-                            let Some(target_element) = target_element else {
-                                continue;
-                            };
-                            // redraw old selected element to remove highlight
-                            self.draw_element_square(&old, None, scale_factor);
+                                let target_element =
+                                    self.find_element_by_pos(old.group, old.period + 1);
+                                let Some(target_element) = target_element else {
+                                    continue;
+                                };
+                                // redraw old selected element to remove highlight
+                                self.draw_element_square(&old, None, scale_factor);
 
-                            self.selection_index = Some(target_element.number as usize - 1);
+                                self.selection_index = Some(target_element.number as usize - 1);
+                            }
+
+                            // highlight new selection
+                            self.handle_selection(scale_factor);
+                            stdout().flush().unwrap();
                         }
+                        KeyCode::Up => {
+                            if self.selection_index.is_none() {
+                                self.selection_index = Some(0);
+                            } else {
+                                let old = self.elements[self.selection_index.unwrap()];
 
-                        // highlight new selection
-                        self.handle_selection(scale_factor);
-                        stdout().flush().unwrap();
-                    }
-                    KeyCode::Up => {
-                        if self.selection_index.is_none() {
-                            self.selection_index = Some(0);
-                        } else {
-                            let old = self.elements[self.selection_index.unwrap()];
+                                let target_element =
+                                    self.find_element_by_pos(old.group, old.period - 1);
+                                let Some(target_element) = target_element else {
+                                    continue;
+                                };
+                                // redraw old selected element to remove highlight
+                                self.draw_element_square(&old, None, scale_factor);
 
-                            let target_element =
-                                self.find_element_by_pos(old.group, old.period - 1);
-                            let Some(target_element) = target_element else {
-                                continue;
-                            };
-                            // redraw old selected element to remove highlight
-                            self.draw_element_square(&old, None, scale_factor);
-
-                            self.selection_index = Some(target_element.number as usize - 1);
+                                self.selection_index = Some(target_element.number as usize - 1);
+                            }
+                            // highlight new selection
+                            self.handle_selection(scale_factor);
+                            stdout().flush().unwrap();
                         }
-                        // highlight new selection
-                        self.handle_selection(scale_factor);
-                        stdout().flush().unwrap();
-                    }
-                    KeyCode::Char(char) => {
-                        // quit if ctrl+c or Q
-                        if key_event.modifiers.contains(KeyModifiers::CONTROL) && char == 'c' {
-                            break;
-                        }
-                        if char == 'q' {
-                            break;
-                        }
-                        // make c open coloring settings prompt
-                        if char == 'c' {
-                            Self::reset_cursor(scale_factor);
-                            print!(
+                        KeyCode::Char(char) => {
+                            // quit if ctrl+c or Q
+                            if key_event.modifiers.contains(KeyModifiers::CONTROL) && char == 'c' {
+                                break;
+                            }
+                            if char == 'q' {
+                                break;
+                            }
+                            // make c open coloring settings prompt
+                            if char == 'c' {
+                                Self::reset_cursor(scale_factor);
+                                print!(
                                 "enter new coloring mode, [N]one, [E]lectronegativity or [T]ype: "
                             );
-                            stdout().flush().unwrap();
-                            let mut buf: [u8; 1] = [0];
-                            stdin().read_exact(&mut buf).unwrap();
-                            match buf[0] {
-                                b'n' => {
-                                    self.coloring_mode = ColoringMode::None;
+                                stdout().flush().unwrap();
+                                let mut buf: [u8; 1] = [0];
+                                stdin().read_exact(&mut buf).unwrap();
+                                match buf[0] {
+                                    b'n' => {
+                                        self.coloring_mode = ColoringMode::None;
+                                    }
+                                    b'e' => {
+                                        self.coloring_mode = ColoringMode::ElectronegativityBased;
+                                    }
+                                    b't' => {
+                                        self.coloring_mode = ColoringMode::TypeBased;
+                                    }
+                                    _ => {}
                                 }
-                                b'e' => {
-                                    self.coloring_mode = ColoringMode::ElectronegativityBased;
-                                }
-                                b't' => {
-                                    self.coloring_mode = ColoringMode::TypeBased;
-                                }
-                                _ => {}
+                                self.draw();
                             }
-                            self.draw();
+                            // make s open search/select prompt
+                            else if char == 's' {
+                                Self::reset_cursor(scale_factor);
+                                print!("select (symbol): ");
+                                stdout().flush().unwrap();
+                                let mut buf = String::new();
+                                disable_raw_mode().unwrap();
+                                stdin().read_line(&mut buf).unwrap();
+                                enable_raw_mode().unwrap();
+                                buf = buf.trim().to_string();
+                                let result = self.find_element_by_symbol(buf);
+                                if let Some(element) = result {
+                                    self.selection_index = Some(element.number as usize - 1);
+                                }
+                                self.draw();
+                            }
                         }
-                        // make s open search/select prompt
-                        else if char == 's' {
-                            Self::reset_cursor(scale_factor);
-                            print!("select (symbol): ");
-                            stdout().flush().unwrap();
-                            let mut buf = String::new();
-                            disable_raw_mode().unwrap();
-                            stdin().read_line(&mut buf).unwrap();
-                            enable_raw_mode().unwrap();
-                            buf = buf.trim().to_string();
-                            let result = self.find_element_by_symbol(buf);
-                            if let Some(element) = result {
-                                self.selection_index = Some(element.number as usize - 1);
+                        _ => {}
+                    }
+                }
+                Event::Mouse(mouse_event) => {
+                    if let MouseEventKind::Down(_) = mouse_event.kind {
+                        let mut x = mouse_event.column;
+                        let mut y = mouse_event.row;
+
+                        if scale_factor > 3 {
+                            y += 1;
+                        }
+
+                        x /= scale_factor;
+                        y /= scale_factor / 2;
+
+                        if y >= 8 {
+                            y -= 1;
+                        }
+
+                        let selected = self.find_element_by_pos(x, y);
+                        if let Some(selected) = selected {
+                            if let Some(old_selection_index) = self.selection_index {
+                                // redraw old selected element to remove highlight
+                                let old = self.elements[old_selection_index];
+                                self.draw_element_square(&old, None, scale_factor);
                             }
-                            self.draw();
+
+                            self.selection_index = Some(selected.number as usize - 1);
+                            // highlight new selection
+                            self.handle_selection(scale_factor);
+                            stdout().flush().unwrap();
                         }
                     }
-                    _ => {}
                 }
+                _ => {}
             }
         }
         Self::reset_cursor(Self::get_scale_factor());
+        execute!(stdout(), DisableMouseCapture).unwrap();
         disable_raw_mode().unwrap();
     }
 }
