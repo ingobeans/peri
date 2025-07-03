@@ -102,7 +102,7 @@ fn draw_selected_info(element: Element, scaling: u16) {
         print!(
             "{}{}",
             text,
-            " ".repeat(max_horizontal_space as usize - text.len())
+            " ".repeat((max_horizontal_space as usize).saturating_sub(text.len()))
         );
     }
 }
