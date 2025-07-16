@@ -6,3 +6,5 @@ you can change coloring mode by pressing C, with options being:
 * [N] None - no colors
 * [E] Electronegativity - color is based on electronegativity with a gradient from green to yellow to red
 * [T] Type based - elements are grouped based on color (what's shown in the above screenshot)
+
+you can either use the mouse to select elements, use the arrow keys, or press S to select an element by its symbol.
